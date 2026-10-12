@@ -12,6 +12,7 @@ from .scanner import MusicScanner
 from .providers import get_provider
 from .metadata_handler import MetadataHandler
 from .embed_handler import EmbedHandler
+from .bilingual import BilingualProcessor
 
 # Configure logging
 logging.basicConfig(
@@ -31,11 +32,13 @@ class LyricFlow:
         self.client = get_provider(config)
         self.handler = MetadataHandler(config)
         self.embedder = EmbedHandler(config)
+        self.bilingual = BilingualProcessor(config)
         
         # Statistics
         self.stats = {
             "scanned": 0,
             "lyrics_saved": 0,
+            "lyrics_upgraded": 0,
             "covers_saved": 0,
             "lyrics_updated": 0,
             "covers_updated": 0,
@@ -64,6 +67,7 @@ class LyricFlow:
             self._process_all()
         finally:
             self.client.close()
+            self.bilingual.close()
             self._print_stats()
     
     def _process_all(self):
@@ -77,6 +81,18 @@ class LyricFlow:
             
             # Check what needs processing (file saving)
             needs_lyrics, needs_cover = self.handler.needs_processing(music_file)
+            existing_lyrics = None
+            upgraded = False
+            if (self.config.download_lyrics and self.config.bilingual_enabled
+                    and self.config.upgrade_existing_lrc and not self.config.overwrite_lyrics
+                    and music_file.has_lyrics()):
+                existing_lyrics = self.handler.read_lyrics(music_file)
+                if existing_lyrics:
+                    lyrics = self.bilingual.process(existing_lyrics, music_file)
+                    upgraded = self.handler.upgrade_lyrics(music_file, existing_lyrics, lyrics)
+                    if upgraded:
+                        existing_lyrics = lyrics
+                        self.stats["lyrics_upgraded"] += 1
             
             # Check what needs updating (write to audio metadata)
             # When UPDATE_*=true and FORCE_UPDATE_*=true, always update (overwrite)
@@ -107,7 +123,8 @@ class LyricFlow:
             
             # Check if anything needs processing
             if not any([needs_lyrics, needs_cover, needs_update_lyrics, needs_update_cover, needs_update_basic_info]):
-                self.stats["skipped"] += 1
+                if not upgraded:
+                    self.stats["skipped"] += 1
                 continue
             
             # Search for the song (pass album for better matching with LrcApi)
@@ -136,9 +153,11 @@ class LyricFlow:
             # Handle lyrics (download once, use for both saving and updating)
             lyrics = None
             if needs_lyrics or needs_update_lyrics:
-                lyrics = self.client.get_lyrics(best)
+                lyrics = existing_lyrics if existing_lyrics is not None else self.client.get_lyrics(best)
                 
                 if lyrics:
+                    if existing_lyrics is None:
+                        lyrics = self.bilingual.process(lyrics, music_file)
                     # Save to file
                     if needs_lyrics and self.handler.save_lyrics(music_file, lyrics):
                         self.stats["lyrics_saved"] += 1
@@ -175,6 +194,7 @@ class LyricFlow:
         logger.info("Processing Complete!")
         logger.info(f"  Scanned:         {self.stats['scanned']} files")
         logger.info(f"  Lyrics saved:    {self.stats['lyrics_saved']}")
+        logger.info(f"  LRC upgraded:    {self.stats['lyrics_upgraded']}")
         logger.info(f"  Covers saved:    {self.stats['covers_saved']}")
         logger.info(f"  Lyrics updated:  {self.stats['lyrics_updated']}")
         logger.info(f"  Covers updated:  {self.stats['covers_updated']}")

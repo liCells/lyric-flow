@@ -8,6 +8,7 @@
 
 - 🎵 Scan music folders (MP3, FLAC, M4A, WAV, etc.)
 - 📝 Download lyrics as `.lrc` files
+- 🌐 Optional English/Chinese bilingual lyrics, including upgrades to local English LRC
 - 🖼️ Download album covers as `cover.jpg`
 - 🏷️ Embed lyrics and covers into audio metadata (ID3/FLAC/MP4)
 - 🔄 Incremental processing (skip existing files)
@@ -87,6 +88,10 @@ python -m src.main
 | `DOWNLOAD_COVER` | `true` | Download album covers (cover.jpg) |
 | `OVERWRITE_LYRICS` | `false` | Overwrite existing lyrics files |
 | `OVERWRITE_COVER` | `false` | Overwrite existing cover files |
+| `BILINGUAL_ENABLED` | `false` | Add published Chinese translations to English LRC |
+| `BILINGUAL_LANGUAGE` | `zh-CN` | Target language; currently only `zh-CN` is supported |
+| `BILINGUAL_SOURCE` | `auto` | `auto` (NetEase then QQ Music), `netease`, or `qq` |
+| `UPGRADE_EXISTING_LRC` | `false` | Upgrade local English LRC; requires lyrics downloads and bilingual support |
 | `UPDATE_LYRICS` | `false` | Write lyrics to audio metadata |
 | `UPDATE_COVER` | `false` | Write cover to audio metadata |
 | `UPDATE_BASIC_INFO` | `false` | Write artist/title/album to metadata |
@@ -99,6 +104,41 @@ python -m src.main
 | `PLATFORMS` | `netease,kuwo,qq` | Search platform priority (TuneHub only) |
 | `LRCAPI_URL` | `https://api.lrc.cx` | LrcApi server URL ([self-host](https://github.com/HisAtri/LrcApi)) |
 | `LRCAPI_AUTH` | `""` | LrcApi authentication key (optional) |
+
+## Bilingual Lyrics
+
+Enable bilingual support to add published Chinese translations from NetEase or QQ Music. Missing translations, unavailable APIs, or unreliable alignment leave the original lyrics intact. Chinese songs, existing Chinese translations, and mixed lyrics containing Chinese, Japanese, or Korean text are skipped. No machine translation is used.
+
+Recommended configuration:
+
+```yaml
+environment:
+  DOWNLOAD_LYRICS: "true"
+  BILINGUAL_ENABLED: "true"
+  BILINGUAL_LANGUAGE: zh-CN
+  BILINGUAL_SOURCE: auto
+  UPGRADE_EXISTING_LRC: "true"
+  OVERWRITE_LYRICS: "false"
+```
+
+Existing UTF-8 LRC files are read locally without searching or downloading the original through the primary lyrics provider. A successful upgrade preserves original lines, metadata tags, and timestamps, adding each translation with the corresponding local timestamp:
+
+```lrc
+[00:01.00]Hello
+[00:01.00]你好
+```
+
+Translation searches require matching titles and at least one matching artist, preferring the same album. The platform original must have the same lyric text sequence as the local file (ignoring case, whitespace, and punctuation). Translation timestamps must uniquely match platform original timestamps within 100 ms. Different versions, missing original lines, and ambiguous timing are skipped. Upgrades write a temporary file in the same directory and atomically replace the unchanged original, preserving permissions. Non-UTF-8 files and symlinks are not overwritten.
+
+`OVERWRITE_LYRICS=true` still downloads and replaces the original; use `false` to preserve local lyrics during upgrades. `UPDATE_LYRICS` and `FORCE_UPDATE_LYRICS` continue to control embedded lyrics, with bilingual processing applied before embedding.
+
+**Build this checkout to use bilingual support in Docker.** Upstream published images do not include these additions. Enable `build: .` in `docker-compose.yml`, change `image` to `lyricflow-bilingual:local`, set the variables above, then run:
+
+```bash
+docker compose up --build -d
+```
+
+When using `.env`, remove duplicate entries from `environment` so they do not override `.env`. Public NetEase and QQ endpoints can be affected by network conditions, region restrictions, or API changes. Failures preserve the original; subsequent scans can retry.
 
 ## Folder Structure
 

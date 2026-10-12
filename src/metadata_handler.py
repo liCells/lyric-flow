@@ -1,6 +1,9 @@
 # Metadata handler - saves lyrics and covers
 import logging
+import os
+import tempfile
 from pathlib import Path
+from .bilingual import CHINESE, TIMESTAMP
 from .config import Config
 from .scanner import MusicFile
 
@@ -41,6 +44,61 @@ class MetadataHandler:
             logger.error(f"Failed to save lyrics {lyrics_path}: {e}")
             return False
     
+    def read_lyrics(self, music_file: MusicFile) -> str | None:
+        try:
+            return music_file.lyrics_path.read_bytes().decode("utf-8")
+        except (OSError, UnicodeError) as exc:
+            logger.warning("Cannot read existing lyrics %s: %s", music_file.lyrics_path, exc)
+            return None
+
+    def upgrade_lyrics(self, music_file: MusicFile, original: str, lyrics: str) -> bool:
+        """Atomically add translations only if the original file is unchanged."""
+        if not (self.config.download_lyrics and self.config.bilingual_enabled and self.config.upgrade_existing_lrc):
+            return False
+        if not original or lyrics == original:
+            return False
+        original_lines = iter(original.splitlines())
+        expected = next(original_lines, None)
+        added = False
+        for line in lyrics.splitlines():
+            if expected is not None and line == expected:
+                expected = next(original_lines, None)
+            elif TIMESTAMP.match(line) and CHINESE.search(line):
+                added = True
+            else:
+                return False
+        if expected is not None or not added:
+            return False
+        path = music_file.lyrics_path
+        temporary = None
+        try:
+            if path.is_symlink() or path.read_bytes() != original.encode("utf-8"):
+                logger.warning("Existing lyrics changed, skipping upgrade: %s", path)
+                return False
+            mode = path.stat().st_mode & 0o777
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(lyrics.encode("utf-8"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.chmod(mode)
+            if path.is_symlink() or path.read_bytes() != original.encode("utf-8"):
+                logger.warning("Existing lyrics changed, skipping upgrade: %s", path)
+                return False
+            # shortcut: the final check and replace are not locked, coordinate writers if other tools edit LRC concurrently.
+            os.replace(temporary, path)
+            logger.info("✓ Upgraded bilingual lyrics: %s", path.name)
+            return True
+        except OSError as exc:
+            logger.error("Failed to upgrade lyrics %s: %s", path, exc)
+            return False
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning("Cannot remove temporary lyrics %s: %s", temporary, exc)
+
     def save_cover(self, music_file: MusicFile, cover_data: bytes) -> bool:
         """
         Save cover image to cover.jpg in the album directory.

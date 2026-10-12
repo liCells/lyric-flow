@@ -28,6 +28,12 @@ class Config:
     overwrite_lyrics: bool = False
     overwrite_cover: bool = False
     
+    # Published Chinese translations (opt-in)
+    bilingual_enabled: bool = False
+    bilingual_language: str = "zh-CN"
+    bilingual_source: str = "auto"
+    upgrade_existing_lrc: bool = False
+
     # Update behavior (write to audio file metadata)
     update_lyrics: bool = False      # Write lyrics to audio metadata
     update_cover: bool = False       # Write cover to audio metadata
@@ -52,6 +58,10 @@ class Config:
     audio_extensions: tuple[str, ...] = (".mp3", ".flac", ".m4a", ".wav", ".ogg", ".wma", ".ape", ".strm")
     
     def __post_init__(self):
+        if self.bilingual_language != "zh-CN":
+            raise ValueError("BILINGUAL_LANGUAGE only supports zh-CN")
+        if self.bilingual_source not in ("auto", "netease", "qq"):
+            raise ValueError("BILINGUAL_SOURCE must be auto, netease or qq")
         if self.platforms is None:
             self.platforms = ["netease", "kuwo", "qq"]
     
@@ -72,6 +82,10 @@ class Config:
             download_cover=os.getenv("DOWNLOAD_COVER", "true").lower() == "true",
             overwrite_lyrics=os.getenv("OVERWRITE_LYRICS", "false").lower() == "true",
             overwrite_cover=os.getenv("OVERWRITE_COVER", "false").lower() == "true",
+            bilingual_enabled=os.getenv("BILINGUAL_ENABLED", "false").lower() == "true",
+            bilingual_language=os.getenv("BILINGUAL_LANGUAGE", "zh-CN"),
+            bilingual_source=os.getenv("BILINGUAL_SOURCE", "auto").lower(),
+            upgrade_existing_lrc=os.getenv("UPGRADE_EXISTING_LRC", "false").lower() == "true",
             update_lyrics=os.getenv("UPDATE_LYRICS", "false").lower() == "true",
             update_cover=os.getenv("UPDATE_COVER", "false").lower() == "true",
             update_basic_info=os.getenv("UPDATE_BASIC_INFO", "false").lower() == "true",

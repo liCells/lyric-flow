@@ -8,6 +8,7 @@
 
 - 🎵 扫描音乐文件夹（支持 MP3、FLAC、M4A、WAV 等格式）
 - 📝 自动下载歌词，保存为 `.lrc` 文件
+- 🌐 可选英文/中文双语歌词，支持补全已有英文 LRC
 - 🖼️ 自动下载专辑封面，保存为 `cover.jpg`
 - 🏷️ 将歌词和封面嵌入音频元数据（ID3/FLAC/MP4）
 - 🔄 增量处理，跳过已有歌词/封面的文件
@@ -87,6 +88,10 @@ python -m src.main
 | `DOWNLOAD_COVER` | `true` | 下载封面（cover.jpg） |
 | `OVERWRITE_LYRICS` | `false` | 覆盖已有歌词文件 |
 | `OVERWRITE_COVER` | `false` | 覆盖已有封面文件 |
+| `BILINGUAL_ENABLED` | `false` | 获取平台现成中文翻译，生成双语 LRC |
+| `BILINGUAL_LANGUAGE` | `zh-CN` | 翻译目标语言，当前仅支持 `zh-CN` |
+| `BILINGUAL_SOURCE` | `auto` | 翻译来源：`auto`（先网易云后 QQ）、`netease`、`qq` |
+| `UPGRADE_EXISTING_LRC` | `false` | 补全已有英文 LRC，需开启下载歌词和双语功能 |
 | `UPDATE_LYRICS` | `false` | 将歌词写入音频元数据 |
 | `UPDATE_COVER` | `false` | 将封面写入音频元数据 |
 | `UPDATE_BASIC_INFO` | `false` | 将 艺术家/标题/专辑 写入元数据 |
@@ -99,6 +104,41 @@ python -m src.main
 | `PLATFORMS` | `netease,kuwo,qq` | 搜索平台优先级（仅 TuneHub） |
 | `LRCAPI_URL` | `https://api.lrc.cx` | LrcApi 服务器地址（[自建部署](https://github.com/HisAtri/LrcApi)） |
 | `LRCAPI_AUTH` | `""` | LrcApi 鉴权密钥（可选） |
+
+## 双语歌词
+
+开启双语功能后，下载的英文歌词会尝试添加网易云、QQ 音乐已有的中文译文。未找到译文、接口不可用或歌词无法可靠对齐时保留原文。中文歌曲、已有中文译文以及含中日韩文字的混合歌词会跳过；不调用机器翻译。
+
+推荐配置：
+
+```yaml
+environment:
+  DOWNLOAD_LYRICS: "true"
+  BILINGUAL_ENABLED: "true"
+  BILINGUAL_LANGUAGE: zh-CN
+  BILINGUAL_SOURCE: auto
+  UPGRADE_EXISTING_LRC: "true"
+  OVERWRITE_LYRICS: "false"
+```
+
+`UPGRADE_EXISTING_LRC=true` 会读取已有 UTF-8 LRC，无需通过原歌词提供商重新搜索或下载原文。只有找到可对齐的译文才补全，原有歌词行、标签和时间戳保持不变，译文使用对应原文的时间戳：
+
+```lrc
+[00:01.00]Hello
+[00:01.00]你好
+```
+
+翻译搜索要求歌名匹配、歌手至少一位匹配，优先同专辑。平台原文与本地歌词的正文序列必须一致（忽略大小写、空格和标点），平台译文时间戳需能在 100 毫秒内唯一匹配平台原文。不同版本、缺行或明显错位时跳过；不按行号强行拼接。补全先写入同目录临时文件，检查原文件未改变后原子替换，保留文件权限。已有非 UTF-8 文件和符号链接不覆盖。
+
+`OVERWRITE_LYRICS=true` 仍表示重新下载并覆盖原文；保留本地歌词做补全时请设为 `false`。`UPDATE_LYRICS` 和 `FORCE_UPDATE_LYRICS` 继续控制音频内嵌歌词，双语合并会在嵌入前执行。
+
+**Docker 使用此修改版需本地构建**，上游发布镜像不包含本仓库的新增功能。在 `docker-compose.yml` 中启用 `build: .`，将 `image` 改为 `lyricflow-bilingual:local`，设置上述环境变量后运行：
+
+```bash
+docker compose up --build -d
+```
+
+如果使用 `.env`，请删除 `environment` 中同名配置，避免它覆盖 `.env` 的值。网易云和 QQ 使用第三方公开接口，可能受网络、地区和接口变更影响；失败时保留原文，下次扫描可重试。
 
 ## 文件夹结构
 

@@ -1,5 +1,8 @@
 services:
   lyricflow:
+    # Build this checkout for bilingual support / 构建当前代码以使用双语功能
+    # build: .
+    # image: lyricflow-bilingual:local
     image: ghcr.io/laoning666/lyricflow:latest
     container_name: lyricflow
     
@@ -31,6 +34,12 @@ services:
       - DOWNLOAD_COVER=true
       - OVERWRITE_LYRICS=false
       - OVERWRITE_COVER=false
+
+      # Published Chinese translations (opt-in) / 现成中文翻译（按需开启）
+      - BILINGUAL_ENABLED=false
+      - BILINGUAL_LANGUAGE=zh-CN
+      - BILINGUAL_SOURCE=auto
+      - UPGRADE_EXISTING_LRC=false
       
       # write to audio file metadata
       # 写入音频元数据
